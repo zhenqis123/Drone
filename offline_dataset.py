@@ -4,8 +4,9 @@ import numpy as np
 import pandas as pd
 import cv2
 import torch
+import random
 class OfflineDataset(Dataset):
-    def __init__(self, root_dir=".", seq_len=10, new_shape=(64, 64)):
+    def __init__(self, root_dir=".", seq_len=10, new_shape=(256,256)):
         path_action = Path(root_dir) / "01-水杉林1_3-晴天-T2.56.csv"
         path_input = Path(root_dir) / "01-水杉林1_3-晴天-T2.56.mp4"
         if not path_action.exists() or not path_input.exists():
@@ -28,7 +29,9 @@ class OfflineDataset(Dataset):
         self.y = np.stack([y1, y2, y3, y4], axis=1)
         self.y = self.y.astype(np.float32)
         self.input = np.load(f"{self.root_dir}/input.npz")
+        self.input = self.input['arr_0']
         self.label = np.load(f"{self.root_dir}/output.npz")
+        self.label = self.label['arr_0']
         # self.save_dataset()
         
     def __len__(self):
@@ -48,11 +51,22 @@ class OfflineDataset(Dataset):
     #     return x, y 
     
     def __getitem__(self, idx):
-        x = self.input['arr_0'][idx]
+        x = self.input[idx]
+        # if random.random() < 0.01:
+        #     for i in range(10):
+        #         image = x[i]
+        #         image = np.transpose(image, [1, 2, 0])
+        #         image = (image*255).astype(np.uint8)
+        #         cv2.imwrite(f'image_{idx}_{i}.png', image)
         x = torch.from_numpy(x)
-        y = self.label['arr_0'][idx]
+        y = self.label[idx]
+        # y = y[..., 0]
+        # y = np.expand_dims(y, axis=-1)
         y = torch.from_numpy(y)
+        # y = y.unsqueeze(-1)
         return x, y
+    
+    
     def get_frames(self, idx):
         frames = []
         for i in range(self.seq_len):
