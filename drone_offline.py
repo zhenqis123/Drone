@@ -17,6 +17,7 @@ from offline_dataset import OfflineDataset
 # import pathlib
 import pathlib
 from matplotlib import pyplot as plt
+from torchvision import transforms
 
 class DroneModel(nn.Module):
     def __init__(self, n_actions):
@@ -66,18 +67,18 @@ def train(model, device, train_loader, val_loader, optimizer, criterion, epochs,
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-            pbar.set_description(f"Epoch {epoch+1}, loss: {loss.item()/len(train_loader)}")
+            pbar.set_description(f"Epoch {epoch+1}, loss: {loss.item()/inputs.size(0)}")
         scheduler.step()
         loss_all.append(running_loss/len(train_loader))
         # print(f"Epoch {epoch+1}, loss: {running_loss/len(train_loader)}")
     plt.plot(loss_all)
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.savefig('loss.png')
+    plt.savefig('loss_single_output.png')
     # model.eval()
 def eval(model, device, val_loader, criterion):
     model.eval()
-    A = np.empty((0, 4))
+    A = np.empty((0, 1))
     with torch.no_grad():
         for i, data in enumerate(val_loader):
             inputs, labels = data
@@ -89,11 +90,7 @@ def eval(model, device, val_loader, criterion):
             A = np.concatenate((A, tem.cpu().numpy()),axis=0)
         condition = np.abs(A) < 0.1
         new_array = np.where(condition, 1, 0)
-        acc = np.array([0, 0, 0, 0])
-        acc[0] = np.sum(new_array[:,0])/new_array.shape[0]
-        acc[1] = np.sum(new_array[:,1])/new_array.shape[0]
-        acc[2] = np.sum(new_array[:,2])/new_array.shape[0]
-        acc[3] = np.sum(new_array[:,3])/new_array.shape[0]
+        acc = np.sum(new_array, axis=0)/new_array.shape[0]
         print('acc:', acc)
         print('mean:', np.mean(acc))
         
@@ -113,23 +110,26 @@ if __name__ == "__main__":
             # Delete the file
             file.unlink()
 
-    
-    dataset = OfflineDataset('/data/xiziheng/drone_data')
+    Filp_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(p=1.0)
+    ])
+    dataset = OfflineDataset('/data/xiziheng/drone_data', transform=Filp_transform, seq_len=32)
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=16)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=16)
-    model = DroneModel(4)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=16)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=16)
+    model = DroneModel(1)
     model = nn.DataParallel(model)
-    optimizer = optim.Adam(model.parameters(), lr=1e-1)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
     
     criterion = nn.MSELoss()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
-    epochs = 300
+    epochs = 200
     train(model, device, train_loader, val_loader, optimizer, criterion, epochs, scheduler)
     torch.save(model.state_dict(), 'drone_model.pth')
+    model.load_state_dict(torch.load('/data/xiziheng/ncps/examples/drone_model.pth'))
     eval(model, device, val_loader, criterion)

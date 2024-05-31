@@ -6,32 +6,15 @@ import cv2
 import torch
 import random
 class OfflineDataset(Dataset):
-    def __init__(self, root_dir=".", seq_len=10, new_shape=(256,256)):
-        path_action = Path(root_dir) / "01-水杉林1_3-晴天-T2.56.csv"
-        path_input = Path(root_dir) / "01-水杉林1_3-晴天-T2.56.mp4"
-        if not path_action.exists() or not path_input.exists():
-            raise RuntimeError("Could not find data")
-        video = cv2.VideoCapture(str(path_input))
-        assert video.isOpened()
-        self.root_dir = root_dir
-        self.total_frames = video.get(cv2.CAP_PROP_FRAME_COUNT)
-        video.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        self.video = video
+    def __init__(self, root_dir=".", seq_len=10, scaling_factor=1, transform=None):
+        self.frames = np.load(f"{root_dir}/frames.npy")
+        self.commands_horizon = np.load(f"{root_dir}/commands_horizon.npy")
+        self.commands_all = np.load(f"{root_dir}/commands_all.npy")
         self.seq_len = seq_len
-        self.data_interval = 66
-        self.new_shape = new_shape
-        
-        data_y = pd.read_csv(path_action, skiprows=range(0, 139))
-        y1 = data_y['rcCommand[0]']
-        y2 = data_y['rcCommand[1]']
-        y3 = data_y['rcCommand[2]']
-        y4 = data_y['rcCommand[3]']
-        self.y = np.stack([y1, y2, y3, y4], axis=1)
-        self.y = self.y.astype(np.float32)
-        self.input = np.load(f"{self.root_dir}/input.npz")
-        self.input = self.input['arr_0']
-        self.label = np.load(f"{self.root_dir}/output.npz")
-        self.label = self.label['arr_0']
+        self.total_frames = self.frames.shape[0]
+        shape = self.frames.shape[1:3]
+        self.new_shape = (int(shape[0]*scaling_factor), int(shape[1]*scaling_factor))
+        self.root_dir = root_dir
         # self.save_dataset()
         
     def __len__(self):
@@ -51,19 +34,14 @@ class OfflineDataset(Dataset):
     #     return x, y 
     
     def __getitem__(self, idx):
-        x = self.input[idx]
-        # if random.random() < 0.01:
-        #     for i in range(10):
-        #         image = x[i]
-        #         image = np.transpose(image, [1, 2, 0])
-        #         image = (image*255).astype(np.uint8)
-        #         cv2.imwrite(f'image_{idx}_{i}.png', image)
+        x = self.frames[idx*self.seq_len:(idx+1)*self.seq_len]
+        y = self.commands_horizon[idx*self.seq_len:(idx+1)*self.seq_len]
+        x = np.transpose(x, [0, 3, 1, 2])
+        x = x.astype(np.float32)
+        y = y.astype(np.float32)
         x = torch.from_numpy(x)
-        y = self.label[idx]
-        # y = y[..., 0]
-        # y = np.expand_dims(y, axis=-1)
         y = torch.from_numpy(y)
-        # y = y.unsqueeze(-1)
+        y = y.unsqueeze(-1)
         return x, y
     
     
