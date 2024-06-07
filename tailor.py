@@ -35,20 +35,37 @@ for i, period_frame in enumerate(period_frames):
     for j in range(start_frame, end_frame):
         ret, frame = video.read() # [H, W, C]
         assert ret == True
-        frame = cv2.resize(frame, (256, 144))
+        frame = cv2.resize(frame, (512, 288))
+        # cv2.imwrite(f"/data/xiziheng/drone_data/images/frame_{index}.jpg", frame)
+        # 转换成灰度图
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        index+=1
+        frame = frame.astype(np.float32) / 255 # 归一化到0,1
+        frames.append(frame)
+        command_all = np.sum(y[j*interval:j*interval+interval], axis=0)/interval
+        commands_all.append(command_all)
+        commands_horizon.append(np.sum(y1[j*interval:j*interval+interval])/interval)
+# 添加镜像数据
+index = 0
+for i, period_frame in enumerate(period_frames):
+    start_frame, end_frame = period_frame
+    video.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for j in range(start_frame, end_frame):
+        ret, frame = video.read() # [H, W, C]
+        assert ret == True
+        frame = cv2.resize(frame, (512, 288))
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         # cv2.imwrite(f"/data/xiziheng/drone_data/images/frame_{index}.jpg", frame)
         index+=1
         frame = frame.astype(np.float32) / 255 # 归一化到0,1
         frame_flipped = cv2.flip(frame, 1)
-        frames.append(frame)
         frames.append(frame_flipped)
         command_all = np.sum(y[j*interval:j*interval+interval], axis=0)/interval
-        commands_all.append(command_all)
         command_all[0] = -command_all[0]
         commands_all.append(command_all)
-        commands_horizon.append(np.sum(y1[j*interval:j*interval+interval])/interval)
         commands_horizon.append(-np.sum(y1[j*interval:j*interval+interval])/interval)
 frames = np.stack(frames, axis=0)
+frames = np.expand_dims(frames, axis=3)
 commands_all = np.stack(commands_all, axis=0)
 commands_horizon = np.stack(commands_horizon, axis=0)
 np.save("/data/xiziheng/drone_data/frames.npy", frames) # [1440, 2560, 3]
