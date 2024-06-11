@@ -7,4 +7,5 @@
 !drone_offline_cfc.py
 !drone_offline_ltc_1order.py
 !drone_offline_ltc_2order.py
+!run.sh
 !.gitignore
