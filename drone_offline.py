@@ -21,12 +21,16 @@ from matplotlib import pyplot as plt
 from torchvision import transforms
 from torchvision.utils import save_image
 import cv2
+from ncps.torch import LTC
+from ncps.wirings import AutoNCP, NCP
 class DroneModel(nn.Module):
     def __init__(self, n_actions):
         super().__init__()
         self.conv_block = ConvBlock()
         # self.conv_block = UNet(1, 256)
-        self.rnn = CfC(256, 64, batch_first=True, proj_size=n_actions)
+        self.rnn = CfC(256, 64, batch_first=True, proj_size=n_actions, mixed_memory=True)
+        # wirings = AutoNCP(64, 1)
+        # self.rnn = LTC(256, wirings, batch_first=True, mixed_memory=True)
 
     def forward(self, x, hx=None):
         batch_size = x.size(0)
@@ -35,6 +39,7 @@ class DroneModel(nn.Module):
         x = self.conv_block(x)
         x = x.view(batch_size, seq_len, *x.shape[1:])
         x, hx = self.rnn(x, hx)
+        a = 1
         return x, hx
 
 class ConvBlock(nn.Module):
@@ -190,13 +195,15 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, sechdul
     ax2.set_title('Acc')
     
     plt.tight_layout()
-    plt.savefig('loss_acc.png')
+    plt.savefig('loss_acc_cfc.png')
+    plt.cla()
     
 def test(outputs, labels):
     outputs = outputs.detach()
     labels = labels.detach()
     a = outputs.view(outputs.size(0)*outputs.size(1), -1)
     b = labels.view(labels.size(0)*labels.size(1), -1)
+    # import pdb;pdb.set_trace()
     tem = (a - b)/b
     tem = tem.cpu().numpy()
     condition = np.abs(tem) < 0.1
@@ -233,7 +240,8 @@ def eval(model, val_loader, criterion):
         plt.plot(labels_all[:500], label='labels', color='r')
         plt.plot(outputs_all[:500], label='outputs', color='b')
         plt.legend()
-        plt.savefig('test.png')
+        plt.savefig('test_cfc.png')
+        plt.clf()
         
 def Saliency(model, device, val_loader):
     model.eval()
@@ -341,7 +349,7 @@ if __name__ == "__main__":
         transforms.RandomHorizontalFlip(p=1.0)
     ])
     dataset = OfflineDataset('/data/xiziheng/drone_data', transform=Filp_transform, seq_len=256)
-    train_size = int(0.8 * len(dataset))
+    train_size = int(0.9 * len(dataset))
     val_size = len(dataset) - train_size
     # train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
     train_dataset = Subset(dataset, range(0, train_size))
@@ -357,10 +365,10 @@ if __name__ == "__main__":
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
     model = model.cuda()
-    epochs = 400
+    epochs = 500
     # model.load_state_dict(torch.load('/data/xiziheng/ncps/examples/drone_model_unet.pth'))
-    # train(model, train_loader, val_loader, optimizer, criterion, epochs, scheduler)
-    # torch.save(model.state_dict(), 'drone_model.pth')
-    model.load_state_dict(torch.load('/data/xiziheng/ncps/examples/drone_model.pth'))
+    train(model, train_loader, val_loader, optimizer, criterion, epochs, scheduler)
+    torch.save(model.state_dict(), 'drone_model_cfc.pth')
+    model.load_state_dict(torch.load('/data/xiziheng/ncps/examples/drone_model_cfc.pth'))
     # Saliency(model, device, val_loader)
     eval(model, val_loader, criterion)
