@@ -30,7 +30,9 @@ argparser.add_argument('--batch_size', type=int, default=8)
 argparser.add_argument('--seq_len', type=int, default=256)
 argparser.add_argument('--lr', type=float, default=1e-3)
 argparser.add_argument('--test_size', type=float, default=0.1)
-argparser.add_argument('--train', type=bool, default=True)
+argparser.add_argument('--train', action='store_false')
+argparser.add_argument('--test', action='store_false')
+
 args = argparser.parse_args()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class DroneModel(nn.Module):
@@ -367,6 +369,6 @@ if __name__ == "__main__":
         train(model, train_loader, val_loader, optimizer, criterion, epochs, scheduler)
         torch.save(model.state_dict(), f'./checkpoints/drone_model_cfc_{epochs}.pth')
         eval(model, val_loader, criterion)
-    else:
+    if args.test:
         model.load_state_dict(torch.load(f'./checkpoints/drone_model_cfc_{epochs}.pth'))
         eval(model, val_loader, criterion)
