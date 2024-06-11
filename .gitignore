@@ -2,4 +2,5 @@
 !drone_offline.py
 !offline_dataset.py
 !tailor.py
+!loss_acc_cfc.png
 !.gitignore
