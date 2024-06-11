@@ -2,5 +2,9 @@
 !drone_offline.py
 !offline_dataset.py
 !tailor.py
-!loss_acc_cfc.png
+!checkpoints/
+!saved_image/
+!drone_offline_cfc.py
+!drone_offline_ltc_1order.py
+!drone_offline_ltc_2order.py
 !.gitignore

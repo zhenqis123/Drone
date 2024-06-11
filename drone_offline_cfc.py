@@ -23,6 +23,16 @@ from torchvision.utils import save_image
 import cv2
 from ncps.torch import LTC
 from ncps.wirings import AutoNCP, NCP
+import argparse
+argparser = argparse.ArgumentParser()
+argparser.add_argument('--epochs', type=int, default=500)
+argparser.add_argument('--batch_size', type=int, default=8)
+argparser.add_argument('--seq_len', type=int, default=256)
+argparser.add_argument('--lr', type=float, default=1e-3)
+argparser.add_argument('--test_size', type=float, default=0.1)
+argparser.add_argument('--train', type=bool, default=True)
+args = argparser.parse_args()
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class DroneModel(nn.Module):
     def __init__(self, n_actions):
         super().__init__()
@@ -39,7 +49,6 @@ class DroneModel(nn.Module):
         x = self.conv_block(x)
         x = x.view(batch_size, seq_len, *x.shape[1:])
         x, hx = self.rnn(x, hx)
-        a = 1
         return x, hx
 
 class ConvBlock(nn.Module):
@@ -168,10 +177,6 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, sechdul
             inputs, labels = inputs.cuda(), labels.cuda()
             optimizer.zero_grad()
             outputs, _ = model(inputs)
-            # saveVideo('/data/xiziheng/save/output.mp4',
-            #           inputs,
-            #             outputs,
-            #             labels)
             acc_tem = test(outputs, labels)
             acc += acc_tem 
             loss = criterion(outputs, labels)
@@ -195,7 +200,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, epochs, sechdul
     ax2.set_title('Acc')
     
     plt.tight_layout()
-    plt.savefig('loss_acc_cfc.png')
+    plt.savefig(f'./saved_image/loss_acc_cfc_{epochs}.png')
     plt.cla()
     
 def test(outputs, labels):
@@ -215,6 +220,9 @@ def eval(model, val_loader, criterion):
     model.eval()
     labels_all = np.empty((0, 1))
     outputs_all = np.empty((0, 1))
+
+    ## 用于保存视频的数据
+    inputs_all = np.empty((0, 1, 288, 512))
     A = np.empty((0, 1))
     with torch.no_grad():
         for i, data in enumerate(val_loader):
@@ -225,13 +233,14 @@ def eval(model, val_loader, criterion):
             b = labels.view(labels.size(0)*labels.size(1), -1)
             tem = (a - b)/b
             A = np.concatenate((A, tem.cpu().numpy()),axis=0)
+            inputs_all = np.concatenate((inputs_all, inputs.cpu().numpy()), axis=0)
             labels_all = np.concatenate((labels_all, b.cpu().numpy()), axis=0)
             outputs_all = np.concatenate((outputs_all, a.cpu().numpy()), axis=0)
-            # saveVideo('/data/xiziheng/save/output_test.mp4',
-            #           inputs,
-            #           outputs,
-            #           labels)
-            # generate_saliency_map(model, inputs)
+        saveVideo(f'./saved_image/output_test_{epochs}.mp4',
+                  inputs_all,
+                  outputs_all,
+                  labels_all)
+        generate_saliency_map(model, inputs_all)
         condition = np.abs(A) < 0.5
         new_array = np.where(condition, 1, 0)
         acc = np.sum(new_array, axis=0)/new_array.shape[0]
@@ -240,7 +249,7 @@ def eval(model, val_loader, criterion):
         plt.plot(labels_all[:500], label='labels', color='r')
         plt.plot(outputs_all[:500], label='outputs', color='b')
         plt.legend()
-        plt.savefig('test_cfc.png')
+        plt.savefig(f'./saved_image/test_cfc_{epochs}.png')
         plt.clf()
         
 def Saliency(model, device, val_loader):
@@ -332,43 +341,32 @@ def generate_saliency_map(model, input_image):
     return saliency
 
 if __name__ == "__main__":
-    # Define the directory path where the images are located
-    image_dir = pathlib.Path('/data/xiziheng')
-
-    # Define the file extension of the images to be deleted
-    file_extension = '.png'
-
-    # Iterate over all files in the directory
-    for file in image_dir.iterdir():
-        # Check if the file is a regular file and has the specified file extension
-        if file.is_file() and file.suffix == file_extension:
-            # Delete the file
-            file.unlink()
 
     Filp_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(p=1.0)
     ])
-    dataset = OfflineDataset('/data/xiziheng/drone_data', transform=Filp_transform, seq_len=256)
-    train_size = int(0.9 * len(dataset))
-    val_size = len(dataset) - train_size
+    dataset = OfflineDataset('/data/xiziheng/drone_data', transform=Filp_transform, seq_len=args.seq_len)
+    val_size = int(args.test_size * len(dataset))
+    train_size = len(dataset) - val_size
     # train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
     train_dataset = Subset(dataset, range(0, train_size))
     test_dataset = Subset(dataset, range(train_size, len(dataset)))
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=8, shuffle=False, num_workers=16)
-    val_loader = torch.utils.data.DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=16)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=16)
+    val_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=16)
     model = DroneModel(1)
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=1)
     
     criterion = nn.MSELoss()
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
     model = model.cuda()
-    epochs = 500
-    # model.load_state_dict(torch.load('/data/xiziheng/ncps/examples/drone_model_unet.pth'))
-    train(model, train_loader, val_loader, optimizer, criterion, epochs, scheduler)
-    torch.save(model.state_dict(), 'drone_model_cfc.pth')
-    model.load_state_dict(torch.load('/data/xiziheng/ncps/examples/drone_model_cfc.pth'))
-    # Saliency(model, device, val_loader)
-    eval(model, val_loader, criterion)
+    epochs = args.epochs
+    if args.train:
+        train(model, train_loader, val_loader, optimizer, criterion, epochs, scheduler)
+        torch.save(model.state_dict(), f'./checkpoints/drone_model_cfc_{epochs}.pth')
+        eval(model, val_loader, criterion)
+    else:
+        model.load_state_dict(torch.load(f'./checkpoints/drone_model_cfc_{epochs}.pth'))
+        eval(model, val_loader, criterion)
